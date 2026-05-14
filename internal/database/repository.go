@@ -43,6 +43,29 @@ func (r *Repository) GetUserByEmail(email string) (*models.User, error) {
 	return &user, nil
 }
 
+// CreateLodging creates a new property for the given owner.
+func (r *Repository) CreateLodging(ownerID int, name, address string, extraData map[string]interface{}) (*models.Lodging, error) {
+	lodging := models.Lodging{
+		OwnerID:   ownerID,
+		Name:      name,
+		Address:   address,
+		ExtraData: extraData,
+	}
+	if err := r.db.Create(&lodging).Error; err != nil {
+		return nil, fmt.Errorf("creating lodging: %w", err)
+	}
+	return &lodging, nil
+}
+
+// ListLodgings returns all lodgings owned by the given user.
+func (r *Repository) ListLodgings(ownerID int) ([]models.Lodging, error) {
+	var lodgings []models.Lodging
+	if err := r.db.Where("owner_id = ?", ownerID).Find(&lodgings).Error; err != nil {
+		return nil, fmt.Errorf("listing lodgings: %w", err)
+	}
+	return lodgings, nil
+}
+
 // GetLodging finds a lodging by ID and owner.
 func (r *Repository) GetLodging(ownerID, lodgingID int) (*models.Lodging, error) {
 	var lodging models.Lodging
