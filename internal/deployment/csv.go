@@ -162,13 +162,17 @@ func LoadLocationMap(path string, locationToBay bool) (map[string]int, map[int]s
 	locToBay := make(map[string]int)
 	bayToLoc := make(map[int]string)
 
+	bayCol := colIndex["bay"]
+	locCol := colIndex["location"]
 	for _, record := range records[1:] {
-		bayStr := record[colIndex["bay"]]
-		bay, err := strconv.Atoi(bayStr)
+		if bayCol >= len(record) || locCol >= len(record) {
+			continue
+		}
+		bay, err := strconv.Atoi(record[bayCol])
 		if err != nil {
 			continue
 		}
-		loc := record[colIndex["location"]]
+		loc := record[locCol]
 		locToBay[loc] = bay
 		bayToLoc[bay] = loc
 	}
@@ -185,9 +189,11 @@ func WriteResultHeader(path string) error {
 	defer f.Close()
 
 	w := csv.NewWriter(f)
-	defer w.Flush()
-
-	return w.Write([]string{"bay", "device_id", "mac_addr", "succeeded", "room_id", "room_name", "reason"})
+	if err := w.Write([]string{"bay", "device_id", "mac_addr", "succeeded", "room_id", "room_name", "reason"}); err != nil {
+		return err
+	}
+	w.Flush()
+	return w.Error()
 }
 
 // AppendResult writes a single deployment result row.
@@ -199,9 +205,7 @@ func AppendResult(path string, result *models.DeploymentResult) error {
 	defer f.Close()
 
 	w := csv.NewWriter(f)
-	defer w.Flush()
-
-	return w.Write([]string{
+	if err := w.Write([]string{
 		strconv.Itoa(result.Bay),
 		result.DeviceID,
 		result.MACAddr,
@@ -209,7 +213,11 @@ func AppendResult(path string, result *models.DeploymentResult) error {
 		strconv.Itoa(result.RoomID),
 		result.RoomName,
 		result.Reason,
-	})
+	}); err != nil {
+		return err
+	}
+	w.Flush()
+	return w.Error()
 }
 
 // ReadResults loads all results from a previous deployment run.

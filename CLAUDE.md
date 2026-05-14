@@ -57,8 +57,6 @@ from the `wynd-{env}-sentrydb` secret in AWS Secrets Manager (us-west-2).
   certs or policies breaks the device irrecoverably.
 - **Treat `deployment-data.csv` as a secret.** It contains plaintext WiFi PSKs.
   Do not commit it.
-- The `deploy --env prod` confirmation gate (`requireProdConfirmation()`) is
-  intentional. `--dry-run` bypasses it by design.
 - The *absence* of a confirmation prompt on `delete-device` is also intentional.
   Don't add one.
 

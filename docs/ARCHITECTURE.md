@@ -13,7 +13,6 @@ internal/
   transport/   USB serial I/O: COBS framing → packet layer → RPC layer
   device/      High-level device commands (Commander) + protobuf-lite encoding
   deployment/  Deployment orchestration (Service), CSV I/O
-  iot/         AWS IoT device lifecycle (EnsureThing, UnassignThing)
   database/    GORM repository — methods deploy and delete-device need
   models/      Shared domain types
   logger/      slog wrapper
@@ -55,15 +54,12 @@ USB device discovery uses VID `0x2fe3` / PID `0x0100`. These are hardware-fixed.
 
 Sentry devices are **factory pre-provisioned**: each device arrives with an
 X.509 certificate already registered in AWS IoT. The cert and its policy are
-permanent hardware identity and must never be deleted or detached.
+permanent hardware identity and must never be deleted or detached. Anything
+that detaches certs or policies breaks the device irrecoverably and cannot be
+fixed in the field.
 
-- `EnsureThing` — creates the Thing if missing, sets `assigned=true` attribute.
-  Never touches certs or policies.
-- `UnassignThing` — sets `assigned=false`. Idempotent on `ResourceNotFoundException`.
-  Never touches certs or policies.
-
-Anything that detaches certs or policies breaks the device irrecoverably and
-cannot be fixed in the field.
+`wyndctl` does not modify AWS IoT state — no Thing attributes are written
+during deploy or delete-device.
 
 ## Command flows
 
@@ -88,14 +84,9 @@ cannot be fixed in the field.
    - `commander.SetAdvertising(false)` — disables BLE.
    - `commander.SetProvision(ssid, psk, ...)` — sends WiFi+MQTT creds, polls
      until `ProvisionMQTTPublish`.
-   - `iot.EnsureThing()` — creates/marks AWS IoT Thing as assigned.
-     Optional, skipped if AWS unavailable.
    - `repo.AssignDeviceToZone()` — writes device→room to Postgres.
      Optional, skipped if DB unavailable.
    - LED feedback + appends row to `deployment-result.csv`.
-
-The `--env prod` confirmation gate (`requireProdConfirmation()`) fires early
-in `RunE`. `--dry-run` bypasses it.
 
 ### `delete-device`
 
@@ -103,17 +94,13 @@ in `RunE`. `--dry-run` bypasses it.
 wyndctl delete-device --account <email> [--lodging-id N] [--device-id THING]
 ```
 
-1. `repo.DeleteDevices(ownerID, lodgingID?, deviceID?, deleteRooms=true)` —
+1. `repo.DeleteDevices(ownerID, lodgingID?, deviceID?, deleteRooms)` —
    joins `device → zone → lodging` filtered by `lodging.owner_id`. For each
-   match, nulls `device.zone_id` (keeps the device row so it can be redeployed)
-   and deletes the zone row. Returns the affected Thing names. Room deletion
-   is always on; there is no flag.
-2. `iot.UnassignThing()` — for each Thing, sets attribute `assigned=false`.
-   Idempotent on `ResourceNotFoundException`. **Never** detaches certs or
-   policies. DB clears even if some IoT updates fail; the command exits
-   non-zero with a count.
+   match, nulls `device.zone_id` (keeps the device row so it can be redeployed).
+   With `--delete-room`, also deletes the zone row.
+2. No AWS IoT changes — certs and policies are never touched.
 
-No prod gate, no interactive confirm — by design.
+No interactive confirm — by design.
 
 ## Files in the working directory
 
@@ -129,7 +116,6 @@ All AWS calls use the default credential chain (SSO / env vars / `~/.aws`).
 Region is hardcoded to `us-west-2`.
 
 - **Secrets Manager** — DB credentials at `wynd-{env}-sentrydb`.
-- **IoT** — `EnsureThing` / `UnassignThing` only flip the `assigned` attribute.
 
 ## Database
 

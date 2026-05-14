@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log/slog"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/hellowynd/wyndctl/internal/config"
@@ -196,7 +197,9 @@ func (c *Commander) CancelIndication(ch *transport.SerialChannel) error {
 func (c *Commander) SetProvision(ch *transport.SerialChannel, ssid, psk string, timeout time.Duration) (bool, models.ProvisionStatus, error) {
 	escapedPSK := psk
 	if psk != "" {
-		escapedPSK = `"` + psk + `"`
+		escaped := strings.ReplaceAll(psk, `\`, `\\`)
+		escaped = strings.ReplaceAll(escaped, `"`, `\"`)
+		escapedPSK = `"` + escaped + `"`
 	}
 
 	mqttTopic := fmt.Sprintf(c.mqttCfg.TopicPattern, c.env)
@@ -255,98 +258,6 @@ func (c *Commander) GetStatus(ch *transport.SerialChannel) (*models.SentryStatus
 	return parseStatusResponse(resp)
 }
 
-// WriteFirmware uploads a firmware binary to the device via streaming RPC.
-func (c *Commander) WriteFirmware(ch *transport.SerialChannel, path string, data []byte, timeout time.Duration) error {
-	ctx := c.rpc.StreamingCall(MethodWrite, ch)
-	defer c.rpc.StreamingFinalize(ctx)
-
-	if err := c.writeOpen(ctx, path, timeout); err != nil {
-		return fmt.Errorf("firmware write open: %w", err)
-	}
-
-	const chunkSize = 512
-	offset := 0
-	for offset < len(data) {
-		end := offset + chunkSize
-		if end > len(data) {
-			end = len(data)
-		}
-
-		if err := c.writeData(ctx, data[offset:end], offset, timeout); err != nil {
-			return fmt.Errorf("firmware write data at offset %d: %w", offset, err)
-		}
-
-		offset = end
-	}
-
-	if err := c.writeClose(ctx, timeout); err != nil {
-		return fmt.Errorf("firmware write close: %w", err)
-	}
-
-	return nil
-}
-
-func (c *Commander) writeOpen(ctx *transport.ClientContext, path string, timeout time.Duration) error {
-	enc := newEncoder()
-	inner := newEncoder()
-	inner.WriteString(fieldPath, path)
-	enc.WriteMessage(fieldOpen, inner)
-
-	if err := c.rpc.StreamingSend(ctx, enc.Bytes()); err != nil {
-		return err
-	}
-
-	return c.checkWriteResponse(ctx, timeout)
-}
-
-func (c *Commander) writeData(ctx *transport.ClientContext, data []byte, offset int, timeout time.Duration) error {
-	enc := newEncoder()
-	inner := newEncoder()
-	inner.appendTag(fieldOffset, wireVarint)
-	inner.appendVarint(uint64(offset))
-	inner.WriteBytes(fieldDataBytes, data)
-	enc.WriteMessage(fieldData, inner)
-
-	if err := c.rpc.StreamingSend(ctx, enc.Bytes()); err != nil {
-		return err
-	}
-
-	return c.checkWriteResponse(ctx, timeout)
-}
-
-func (c *Commander) writeClose(ctx *transport.ClientContext, timeout time.Duration) error {
-	enc := newEncoder()
-	enc.WriteEmptyMessage(fieldClose)
-
-	if err := c.rpc.StreamingSend(ctx, enc.Bytes()); err != nil {
-		return err
-	}
-
-	return c.checkWriteResponse(ctx, timeout)
-}
-
-func (c *Commander) checkWriteResponse(ctx *transport.ClientContext, timeout time.Duration) error {
-	resp, err := c.rpc.StreamingReceive(ctx, timeout)
-	if err != nil {
-		return err
-	}
-
-	fields, err := decodeFields(resp)
-	if err != nil {
-		return fmt.Errorf("decoding write response: %w", err)
-	}
-
-	errBytes := getBytes(fields, 1)
-	if errBytes != nil {
-		errFields, _ := decodeFields(errBytes)
-		reason := getString(errFields, 1)
-		if reason != "" {
-			return fmt.Errorf("device write error: %s", reason)
-		}
-	}
-
-	return nil
-}
 
 func parseDeviceInfoResponse(data []byte) (*models.DeviceInfo, error) {
 	fields, err := decodeFields(data)
