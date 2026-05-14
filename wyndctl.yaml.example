@@ -1,0 +1,5 @@
+env: dev   # dev, staging, or prod
+
+log:
+  level: info
+  format: text  # text or json

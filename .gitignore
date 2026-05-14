@@ -1,0 +1,20 @@
+# Build output
+bin/
+
+# Runtime artifacts
+deployment-data.csv
+deployment-result.csv
+location-map.csv
+
+# Local config (contains env/credentials — copy wyndctl.yaml.example to get started)
+wyndctl.yaml
+
+# macOS
+.DS_Store
+
+# Editor
+.vscode/
+.idea/
+
+# Claude Code
+.claude/
