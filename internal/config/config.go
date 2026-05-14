@@ -4,6 +4,7 @@ package config
 import (
 	"bufio"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -66,8 +67,14 @@ func (c *DBConfig) BuildDSN() string {
 	if port == 0 {
 		port = 5432
 	}
-	return fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=%s",
-		c.Host, port, c.User, c.Password, c.DBName, sslmode)
+	u := &url.URL{
+		Scheme: "postgres",
+		User:   url.UserPassword(c.User, c.Password),
+		Host:   fmt.Sprintf("%s:%d", c.Host, port),
+		Path:   "/" + c.DBName,
+		RawQuery: url.Values{"sslmode": {sslmode}}.Encode(),
+	}
+	return u.String()
 }
 
 // LogConfig holds logging configuration.

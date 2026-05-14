@@ -1,10 +1,12 @@
 package cmd
 
 import (
+	"bufio"
 	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"sync"
 	"time"
 
@@ -101,7 +103,7 @@ func runDeploy(cmd *cobra.Command, args []string) error {
 	}
 
 	// Confirm
-	if !confirmAction(fmt.Sprintf("Deploy %d device(s) on %s?", len(channelsToDeploy), appCfg.Env)) {
+	if !confirmAction(cmd.ErrOrStderr(), cmd.InOrStdin(), fmt.Sprintf("Deploy %d device(s) on %s?", len(channelsToDeploy), appCfg.Env)) {
 		return fmt.Errorf("deployment cancelled by user")
 	}
 
@@ -129,10 +131,18 @@ func runDeploy(cmd *cobra.Command, args []string) error {
 		FailColor:    0xFF0000,
 	}
 
+	// Sort locations for deterministic ordering
+	locations := make([]string, 0, len(channelsToDeploy))
+	for loc := range channelsToDeploy {
+		locations = append(locations, loc)
+	}
+	sort.Strings(locations)
+
 	if iterative {
-		idx := 0
-		for location, ch := range channelsToDeploy {
-			bayNum := idx
+		stdin := bufio.NewReader(cmd.InOrStdin())
+		for idx, location := range locations {
+			ch := channelsToDeploy[location]
+			bayNum := idx + 1
 			if locToBay != nil {
 				bayNum = locToBay[location]
 			}
@@ -141,30 +151,30 @@ func runDeploy(cmd *cobra.Command, args []string) error {
 			_ = commander.SetIndicate(ch, colorVal, colorVal, colorVal, 3600)
 
 			fmt.Fprintf(cmd.OutOrStdout(), "Press Enter to deploy bay %d at %s...", bayNum, location)
-			fmt.Scanln()
+			stdin.ReadString('\n')
 
-			if bayNum > 0 && bayNum <= len(settings) {
+			if bayNum >= 1 && bayNum <= len(settings) {
 				svc.DeployDevice(ch, settings[bayNum-1], opts)
+			} else {
+				appLog.Warn("skipping device with invalid bay number", "bay", bayNum, "location", location)
 			}
 
 			_ = commander.CancelIndication(ch)
 			time.Sleep(1500 * time.Millisecond)
-			idx++
 		}
 	} else {
 		var wg sync.WaitGroup
 		sem := make(chan struct{}, workers)
 
-		idx := 0
-		for location, ch := range channelsToDeploy {
-			bayNum := idx
+		for idx, location := range locations {
+			ch := channelsToDeploy[location]
+			bayNum := idx + 1
 			if locToBay != nil {
 				bayNum = locToBay[location]
 			}
 
-			if bayNum <= 0 || bayNum > len(settings) {
+			if bayNum < 1 || bayNum > len(settings) {
 				appLog.Warn("skipping device with invalid bay number", "bay", bayNum, "location", location)
-				idx++
 				continue
 			}
 
@@ -176,8 +186,6 @@ func runDeploy(cmd *cobra.Command, args []string) error {
 				defer func() { <-sem }()
 				svc.DeployDevice(c, setting, opts)
 			}(ch, settings[bayNum-1])
-
-			idx++
 		}
 
 		wg.Wait()

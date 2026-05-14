@@ -5,13 +5,17 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 )
 
-var secretCache = make(map[string]map[string]interface{})
+var (
+	secretCache   = make(map[string]map[string]interface{})
+	secretCacheMu sync.Mutex
+)
 
 func resolveAWSSecret(reference string) (string, error) {
 	parts := strings.SplitN(reference, ".", 2)
@@ -21,7 +25,11 @@ func resolveAWSSecret(reference string) (string, error) {
 	secretID := parts[0]
 	key := parts[1]
 
-	if cached, ok := secretCache[secretID]; ok {
+	secretCacheMu.Lock()
+	cached, hit := secretCache[secretID]
+	secretCacheMu.Unlock()
+
+	if hit {
 		val, exists := cached[key]
 		if !exists {
 			return "", fmt.Errorf("key %q not found in secret %q", key, secretID)
@@ -54,7 +62,9 @@ func resolveAWSSecret(reference string) (string, error) {
 		return "", fmt.Errorf("parsing secret %q JSON: %w", secretID, err)
 	}
 
+	secretCacheMu.Lock()
 	secretCache[secretID] = secretData
+	secretCacheMu.Unlock()
 
 	val, exists := secretData[key]
 	if !exists {

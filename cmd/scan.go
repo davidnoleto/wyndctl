@@ -1,11 +1,13 @@
 package cmd
 
 import (
+	"bufio"
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"time"
 
 	"github.com/hellowynd/wyndctl/internal/device"
@@ -77,9 +79,15 @@ func runScan(cmd *cobra.Command, args []string) error {
 	}
 	defer commander.CloseAll()
 
-	// Turn off all LEDs first
-	for _, ch := range channels {
-		_ = commander.CancelIndication(ch)
+	// Turn off all LEDs first (sorted for deterministic order)
+	locations := make([]string, 0, len(channels))
+	for loc := range channels {
+		locations = append(locations, loc)
+	}
+	sort.Strings(locations)
+
+	for _, loc := range locations {
+		_ = commander.CancelIndication(channels[loc])
 		time.Sleep(1500 * time.Millisecond)
 	}
 
@@ -105,7 +113,9 @@ func runScan(cmd *cobra.Command, args []string) error {
 
 	colorVal := uint32(color)
 	var results []scannedDevice
-	for location, ch := range channels {
+	stdin := bufio.NewReader(cmd.InOrStdin())
+	for _, location := range locations {
+		ch := channels[location]
 		info, err := commander.GetDeviceInfo(ch)
 		if err != nil {
 			appLog.Warn("failed to get device info", "location", location, "error", err)
@@ -132,7 +142,7 @@ func runScan(cmd *cobra.Command, args []string) error {
 			_ = commander.SetIndicate(ch, colorVal, colorVal, colorVal, 3600)
 			fmt.Fprintf(cmd.ErrOrStderr(), "  Bay number for %s: ", location)
 			var bayNum string
-			fmt.Scanln(&bayNum)
+			fmt.Fscan(stdin, &bayNum)
 			_ = writer.Write([]string{bayNum, location, info.AWSThingName})
 			_ = commander.CancelIndication(ch)
 			time.Sleep(1500 * time.Millisecond)

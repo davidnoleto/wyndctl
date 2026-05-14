@@ -3,17 +3,16 @@ package cmd
 import (
 	"bufio"
 	"fmt"
-	"os"
+	"io"
 	"strings"
 )
 
 // confirmAction prompts the user for Y/n confirmation.
 // Returns true only for explicit "y" or "yes" input.
-func confirmAction(message string) bool {
-	reader := bufio.NewReader(os.Stdin)
-	fmt.Fprintf(os.Stderr, "%s [y/N] ", message)
+func confirmAction(w io.Writer, r io.Reader, message string) bool {
+	fmt.Fprintf(w, "%s [y/N] ", message)
 
-	input, err := reader.ReadString('\n')
+	input, err := bufio.NewReader(r).ReadString('\n')
 	if err != nil {
 		return false
 	}
