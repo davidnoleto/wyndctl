@@ -19,9 +19,11 @@ func (User) TableName() string { return "user" }
 
 // Lodging represents a property owned by a user.
 type Lodging struct {
-	LodgingID int    `gorm:"primaryKey;column:lodging_id"`
-	OwnerID   int    `gorm:"column:owner_id"`
-	Name      string `gorm:"column:name"`
+	LodgingID int                    `gorm:"primaryKey;column:lodging_id"`
+	OwnerID   int                    `gorm:"column:owner_id"`
+	Name      string                 `gorm:"column:name"`
+	Address   string                 `gorm:"column:address"`
+	ExtraData map[string]interface{} `gorm:"column:extra_data;serializer:json"`
 }
 
 func (Lodging) TableName() string { return "lodging" }
