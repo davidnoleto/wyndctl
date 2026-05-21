@@ -15,11 +15,24 @@ import (
 
 // Config holds all application configuration.
 type Config struct {
-	Env  string     `mapstructure:"env"`
-	MQTT MQTTConfig `mapstructure:"mqtt"`
-	USB  USBConfig  `mapstructure:"usb"`
-	DB   DBConfig   `mapstructure:"db"`
-	Log  LogConfig  `mapstructure:"log"`
+	Env     string        `mapstructure:"env"`
+	MQTT    MQTTConfig    `mapstructure:"mqtt"`
+	USB     USBConfig     `mapstructure:"usb"`
+	DB      DBConfig      `mapstructure:"db"`
+	Log     LogConfig     `mapstructure:"log"`
+	Cognito CognitoConfig `mapstructure:"cognito"`
+	Stripe  StripeConfig  `mapstructure:"stripe"`
+}
+
+// CognitoConfig holds AWS Cognito user pool settings used for account signup.
+type CognitoConfig struct {
+	AppClientID string `mapstructure:"app_client_id"`
+	Region      string `mapstructure:"region"`
+}
+
+// StripeConfig holds Stripe API credentials used for billing customer creation.
+type StripeConfig struct {
+	APIKey string `mapstructure:"api_key"`
 }
 
 // MQTTConfig holds AWS IoT / MQTT broker settings.
@@ -107,6 +120,9 @@ func DefaultConfig() *Config {
 			Level:  "info",
 			Format: "text",
 		},
+		Cognito: CognitoConfig{
+			Region: "us-west-2",
+		},
 	}
 }
 
@@ -192,10 +208,19 @@ func Load(cfgFile string) (*Config, error) {
 	findAndLoadEnvFile(env)
 	mapPGEnvVars()
 	mapIOTEnvVars()
+	mapAuthEnvVars()
 
 	cfg := DefaultConfig()
 	if err := viper.Unmarshal(cfg); err != nil {
 		return nil, fmt.Errorf("unmarshalling config: %w", err)
+	}
+
+	if cfg.Stripe.APIKey != "" && !strings.HasPrefix(cfg.Stripe.APIKey, "sk_") {
+		if resolved, err := resolveAWSRawSecret(cfg.Stripe.APIKey); err == nil {
+			cfg.Stripe.APIKey = resolved
+		} else {
+			fmt.Fprintf(os.Stderr, "warning: could not resolve Stripe API key secret %q: %v\n", cfg.Stripe.APIKey, err)
+		}
 	}
 
 	if cfg.DB.Host == "" || isSecretReference(cfg.DB.Host) {
@@ -259,6 +284,15 @@ func mapIOTEnvVars() {
 	}
 }
 
+func mapAuthEnvVars() {
+	if val := os.Getenv("APP_CLIENT_ID"); val != "" {
+		viper.Set("cognito.app_client_id", val)
+	}
+	if val := os.Getenv("STRIPE_API_KEY"); val != "" {
+		viper.Set("stripe.api_key", val)
+	}
+}
+
 func setDefaults() {
 	d := DefaultConfig()
 
@@ -275,4 +309,5 @@ func setDefaults() {
 	viper.SetDefault("db.dbname", d.DB.DBName)
 	viper.SetDefault("log.level", d.Log.Level)
 	viper.SetDefault("log.format", d.Log.Format)
+	viper.SetDefault("cognito.region", d.Cognito.Region)
 }

@@ -74,6 +74,31 @@ func resolveAWSSecret(reference string) (string, error) {
 	return fmt.Sprintf("%v", val), nil
 }
 
+// resolveAWSRawSecret fetches a Secrets Manager secret whose SecretString is a
+// plain string (not JSON). Used for credentials stored as opaque blobs, e.g.
+// the Stripe API key (Python: Union[AWSSecret, str]).
+func resolveAWSRawSecret(secretID string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	cfg, err := awsconfig.LoadDefaultConfig(ctx, awsconfig.WithRegion("us-west-2"))
+	if err != nil {
+		return "", fmt.Errorf("loading AWS config: %w", err)
+	}
+
+	client := secretsmanager.NewFromConfig(cfg)
+	result, err := client.GetSecretValue(ctx, &secretsmanager.GetSecretValueInput{
+		SecretId: &secretID,
+	})
+	if err != nil {
+		return "", fmt.Errorf("fetching secret %q: %w", secretID, err)
+	}
+	if result.SecretString == nil {
+		return "", fmt.Errorf("secret %q has no string value", secretID)
+	}
+	return *result.SecretString, nil
+}
+
 func resolveDBFromSecrets(env string) (host string, port int, user string, password string, dbname string, err error) {
 	secretName := fmt.Sprintf("wynd-%s-sentrydb", env)
 
