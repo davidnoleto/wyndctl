@@ -33,6 +33,39 @@ func NewRepository(cfg config.DBConfig) (*Repository, error) {
 	return &Repository{db: db}, nil
 }
 
+// CreateUser creates a new user account and default notification profile.
+// cognito_username is set to the email to match the Python CLI convention.
+func (r *Repository) CreateUser(email, fullName string) (*models.User, error) {
+	var existing models.User
+	if err := r.db.Where("email = ?", email).First(&existing).Error; err == nil {
+		return nil, fmt.Errorf("user with email %q already exists (user_id=%d)", email, existing.UserID)
+	}
+
+	cognitoUsername := email
+	user := models.User{
+		Email:           email,
+		FullName:        fullName,
+		Status:          models.UserStatusConfirmed,
+		CognitoUsername: &cognitoUsername,
+	}
+	if err := r.db.Create(&user).Error; err != nil {
+		return nil, fmt.Errorf("creating user: %w", err)
+	}
+
+	profile := models.UserProfile{
+		UserID:          user.UserID,
+		IsEmailEnabled:  true,
+		IsPushEnabled:   true,
+		IsSMSEnabled:    false,
+		IsPhoneVerified: false,
+	}
+	if err := r.db.Create(&profile).Error; err != nil {
+		return nil, fmt.Errorf("creating user profile: %w", err)
+	}
+
+	return &user, nil
+}
+
 // GetUserByEmail finds a user by their email address.
 func (r *Repository) GetUserByEmail(email string) (*models.User, error) {
 	var user models.User
