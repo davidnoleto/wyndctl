@@ -88,6 +88,33 @@ during deploy or delete-device.
      Optional, skipped if DB unavailable.
    - LED feedback + appends row to `deployment-result.csv`.
 
+### `fw-update`
+
+```
+wyndctl fw-update [--firmware F] [--wifi-firmware F] [--pmm-firmware F] [--all] [--workers N]
+```
+
+At least one firmware flag is required; any combination is valid.
+
+1. Loads each firmware binary from disk.
+2. Scans USB for devices (same as `scan`). Optionally loads `location-map.csv`.
+3. Selects channels to update: all if `--all` or no prior `fw-update-result.csv`;
+   otherwise only devices whose bay shows `succeeded=false` in that file.
+4. Confirms action, creates `fw-update-result.csv`.
+5. For each device in parallel (goroutine pool):
+   - `commander.GetDeviceInfo()` — logs current firmware versions.
+   - `commander.SetPower(false)` — required before USB write.
+   - `commander.WriteFirmware(ch, target, data, 4s)` for each image:
+     opens a bidirectional streaming RPC (method 9), sends 512-byte chunks
+     with per-chunk ACK, then closes the stream.
+   - `commander.Reboot()` — triggers the device to apply the new image.
+   - Sleeps for the image-specific flash time (35 s main / 140 s WiFi / 100 s PMM)
+     so the device is ready before the command returns.
+   - Appends result to `fw-update-result.csv`.
+
+Firmware target path strings sent to the device:
+`$firmware_path`, `$bw16_firmware_path`, `$pm_firmware_path`.
+
 ### `delete-device`
 
 ```
@@ -108,7 +135,8 @@ No interactive confirm — by design.
 |---|---|---|
 | `deployment-data.csv` | Input | bay → WiFi SSID/PSK, account, lodging_id, room. Contains plaintext PSKs — treat as secret. |
 | `location-map.csv` | Input (optional) | USB port location → bay number. Created by `scan --label`. |
-| `deployment-result.csv` | Output | Per-device result log. Don't commit. |
+| `deployment-result.csv` | Output | Per-device deploy result log. Don't commit. |
+| `fw-update-result.csv` | Output | Per-device firmware update result log. Don't commit. |
 
 ## AWS
 
