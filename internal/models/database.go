@@ -53,6 +53,15 @@ type Zone struct {
 
 func (Zone) TableName() string { return "zone" }
 
+// LodgingIntegration links a lodging to an external platform (e.g. Airbnb).
+// Only the fields needed for deletion are mapped here.
+type LodgingIntegration struct {
+	LodgingIntegrationID int `gorm:"primaryKey;column:lodging_integration_id"`
+	LodgingID            int `gorm:"column:lodging_id"`
+}
+
+func (LodgingIntegration) TableName() string { return "lodging_integration" }
+
 // Device represents a Sentry device registered in the platform.
 type Device struct {
 	DeviceID  string                 `gorm:"primaryKey;column:device_id"`

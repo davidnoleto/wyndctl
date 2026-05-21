@@ -145,6 +145,40 @@ func (r *Repository) AssignDeviceToZone(deviceID string, zoneID int, name string
 	return result.Error
 }
 
+// DeleteLodging removes one or all lodgings owned by ownerID, mirroring the
+// Python delete_lodgings_of_user flow: LodgingIntegration rows are deleted
+// first (no DB cascade), then Lodging rows (zones cascade at the DB level).
+// Pass a non-nil lodgingID to scope deletion to a single property.
+// Returns the IDs of every deleted lodging.
+func (r *Repository) DeleteLodging(ownerID int, lodgingID *int) ([]int, error) {
+	query := r.db.Where("owner_id = ?", ownerID)
+	if lodgingID != nil {
+		query = query.Where("lodging_id = ?", *lodgingID)
+	}
+
+	var lodgings []models.Lodging
+	if err := query.Find(&lodgings).Error; err != nil {
+		return nil, fmt.Errorf("finding lodgings: %w", err)
+	}
+	if len(lodgings) == 0 {
+		return nil, nil
+	}
+
+	ids := make([]int, len(lodgings))
+	for i, l := range lodgings {
+		ids[i] = l.LodgingID
+	}
+
+	if err := r.db.Where("lodging_id IN ?", ids).Delete(&models.LodgingIntegration{}).Error; err != nil {
+		return nil, fmt.Errorf("deleting lodging integrations: %w", err)
+	}
+	if err := r.db.Where("lodging_id IN ?", ids).Delete(&models.Lodging{}).Error; err != nil {
+		return nil, fmt.Errorf("deleting lodgings: %w", err)
+	}
+
+	return ids, nil
+}
+
 // DeleteDevices clears device-zone associations for a user's lodging.
 // Returns the device IDs (AWS Thing names) of all affected devices. The
 // device rows themselves are kept so they can be redeployed; only zone_id
