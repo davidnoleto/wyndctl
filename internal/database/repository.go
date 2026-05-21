@@ -145,6 +145,43 @@ func (r *Repository) AssignDeviceToZone(deviceID string, zoneID int, name string
 	return result.Error
 }
 
+// DeviceRow is a flat projection of device + zone + lodging used by ListDevices.
+type DeviceRow struct {
+	DeviceID    string `gorm:"column:device_id"`
+	LodgingID   int    `gorm:"column:lodging_id"`
+	LodgingName string `gorm:"column:lodging_name"`
+	ZoneID      int    `gorm:"column:zone_id"`
+	ZoneName    string `gorm:"column:zone_name"`
+}
+
+// ListDevices returns all assigned devices owned by ownerID, optionally
+// scoped to a single lodging. Only devices with a zone_id are included.
+func (r *Repository) ListDevices(ownerID int, lodgingID *int) ([]DeviceRow, error) {
+	sql := `
+		SELECT d.device_id,
+		       l.lodging_id,
+		       l.name AS lodging_name,
+		       z.zone_id,
+		       z.name AS zone_name
+		FROM device d
+		JOIN zone z ON z.zone_id = d.zone_id
+		JOIN lodging l ON l.lodging_id = z.lodging_id
+		WHERE l.owner_id = ?
+		  AND d.zone_id IS NOT NULL`
+
+	args := []interface{}{ownerID}
+	if lodgingID != nil {
+		sql += " AND l.lodging_id = ?"
+		args = append(args, *lodgingID)
+	}
+
+	var rows []DeviceRow
+	if err := r.db.Raw(sql, args...).Scan(&rows).Error; err != nil {
+		return nil, fmt.Errorf("listing devices: %w", err)
+	}
+	return rows, nil
+}
+
 // DeleteLodging removes one or all lodgings owned by ownerID, mirroring the
 // Python delete_lodgings_of_user flow: LodgingIntegration rows are deleted
 // first (no DB cascade), then Lodging rows (zones cascade at the DB level).
