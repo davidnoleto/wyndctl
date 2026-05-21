@@ -35,7 +35,10 @@ func NewRepository(cfg config.DBConfig) (*Repository, error) {
 
 // CreateUser creates a new user account and default notification profile.
 // cognito_username is set to the email to match the Python CLI convention.
-func (r *Repository) CreateUser(email, fullName string) (*models.User, error) {
+// isSmokeOnly and clientType, when set, are written into user_profile.extra_data
+// under the keys "is_smoke_only" and "client_type" (matching the Python
+// UserProfile constants).
+func (r *Repository) CreateUser(email, fullName string, isSmokeOnly bool, clientType string) (*models.User, error) {
 	var existing models.User
 	if err := r.db.Where("email = ?", email).First(&existing).Error; err == nil {
 		return nil, fmt.Errorf("user with email %q already exists (user_id=%d)", email, existing.UserID)
@@ -52,12 +55,24 @@ func (r *Repository) CreateUser(email, fullName string) (*models.User, error) {
 		return nil, fmt.Errorf("creating user: %w", err)
 	}
 
+	var extra map[string]interface{}
+	if isSmokeOnly || clientType != "" {
+		extra = map[string]interface{}{}
+		if isSmokeOnly {
+			extra["is_smoke_only"] = true
+		}
+		if clientType != "" {
+			extra["client_type"] = clientType
+		}
+	}
+
 	profile := models.UserProfile{
 		UserID:          user.UserID,
 		IsEmailEnabled:  true,
 		IsPushEnabled:   true,
 		IsSMSEnabled:    false,
 		IsPhoneVerified: false,
+		ExtraData:       extra,
 	}
 	if err := r.db.Create(&profile).Error; err != nil {
 		return nil, fmt.Errorf("creating user profile: %w", err)
