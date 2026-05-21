@@ -24,7 +24,6 @@ Read on demand, not every session:
 - Transport stack (COBS → packet → RPC → encoding): `docs/ARCHITECTURE.md` § Transport
 - Command flows (scan, deploy, fw-update, create-account, delete-device, etc.): `docs/ARCHITECTURE.md` § Command flows
 - Linux discovery troubleshooting (dialout, udev, build-on-target-OS): `docs/LINUX_SETUP.md`
-- Full command reference: `wyndctl-docs.pdf` (regenerate with `python3 /tmp/build_wyndctl_docs.py`)
 
 ## Conventions
 
