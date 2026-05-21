@@ -220,6 +220,75 @@ func AppendResult(path string, result *models.DeploymentResult) error {
 	return w.Error()
 }
 
+// WriteFWUpdateHeader creates the fw-update output CSV with headers.
+func WriteFWUpdateHeader(path string) error {
+	f, err := os.Create(path)
+	if err != nil {
+		return fmt.Errorf("creating fw-update result file: %w", err)
+	}
+	defer f.Close()
+
+	w := csv.NewWriter(f)
+	if err := w.Write([]string{"bay", "device_id", "mac_addr", "succeeded", "reason"}); err != nil {
+		return err
+	}
+	w.Flush()
+	return w.Error()
+}
+
+// AppendFWUpdateResult writes a single firmware update result row.
+func AppendFWUpdateResult(path string, result *models.FirmwareUpdateResult) error {
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return fmt.Errorf("opening fw-update result file: %w", err)
+	}
+	defer f.Close()
+
+	w := csv.NewWriter(f)
+	if err := w.Write([]string{
+		strconv.Itoa(result.Bay),
+		result.DeviceID,
+		result.MACAddr,
+		strconv.FormatBool(result.Succeeded),
+		result.Reason,
+	}); err != nil {
+		return err
+	}
+	w.Flush()
+	return w.Error()
+}
+
+// ReadFWUpdateResults loads all results from a previous fw-update run.
+func ReadFWUpdateResults(path string) (map[int]*models.FirmwareUpdateResult, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("opening fw-update result file: %w", err)
+	}
+	defer f.Close()
+
+	reader := csv.NewReader(f)
+	records, err := reader.ReadAll()
+	if err != nil {
+		return nil, fmt.Errorf("reading fw-update result CSV: %w", err)
+	}
+
+	results := make(map[int]*models.FirmwareUpdateResult)
+	for _, record := range records[1:] {
+		if len(record) < 5 {
+			continue
+		}
+		bay, _ := strconv.Atoi(record[0])
+		results[bay] = &models.FirmwareUpdateResult{
+			Bay:       bay,
+			DeviceID:  record[1],
+			MACAddr:   record[2],
+			Succeeded: record[3] == "true",
+			Reason:    record[4],
+		}
+	}
+	return results, nil
+}
+
 // ReadResults loads all results from a previous deployment run.
 func ReadResults(path string) (map[int]*models.DeploymentResult, error) {
 	f, err := os.Open(path)

@@ -4,7 +4,11 @@ bin/
 # Runtime artifacts
 deployment-data.csv
 deployment-result.csv
+fw-update-result.csv
 location-map.csv
+
+# Firmware binaries
+*.bin
 
 # Local config (contains env/credentials — copy wyndctl.yaml.example to get started)
 wyndctl.yaml
