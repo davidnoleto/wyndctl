@@ -1,8 +1,10 @@
 # CLAUDE.md
 
-A focused Go CLI for deploying Wynd Sentry IoT air-quality devices over USB serial.
-Three commands: `scan`, `deploy`, `delete-device`. A minimal subset of the full
-`wynd-deploy-cli`.
+A focused Go CLI for deploying Wynd Sentry IoT air-quality devices over USB serial
+and managing the platform accounts/properties they're assigned to. Commands:
+`scan`, `deploy`, `fw-update`, `unprovision`, `create-account`, `create-property`,
+`list-property`, `delete-property`, `list-devices`, `delete-device`. A minimal
+subset of the full `wynd-deploy-cli`.
 
 ## Commands
 
@@ -20,7 +22,7 @@ Read on demand, not every session:
 
 - Overview, layer map, device lifecycle: `docs/ARCHITECTURE.md`
 - Transport stack (COBS → packet → RPC → encoding): `docs/ARCHITECTURE.md` § Transport
-- Deploy / scan / delete-device flows: `docs/ARCHITECTURE.md` § Command flows
+- Command flows (scan, deploy, fw-update, create-account, delete-device, etc.): `docs/ARCHITECTURE.md` § Command flows
 - Linux discovery troubleshooting (dialout, udev, build-on-target-OS): `docs/LINUX_SETUP.md`
 - Full command reference: `wyndctl-docs.pdf` (regenerate with `python3 /tmp/build_wyndctl_docs.py`)
 
@@ -51,6 +53,9 @@ from the `wynd-{env}-sentrydb` secret in AWS Secrets Manager (us-west-2).
 - **Never log the `psk` argument.** `ssid` is fine; `psk` is not. The `SECURITY:`
   comment in `device.Commander.SetProvision` is load-bearing — don't remove it,
   don't work around it.
+- **Never log the `--password` argument to `create-account`.** Same rule, same
+  reason. The `SECURITY:` comment in `runCreateAccount` (cmd/account.go) is
+  load-bearing.
 - **Never detach IoT certs or policies.** Sentry devices are factory pre-provisioned
   with X.509 certs that are permanent hardware identity. `EnsureThing` only sets
   `assigned=true`; `UnassignThing` only sets `assigned=false`. Anything that touches
@@ -67,9 +72,11 @@ from the `wynd-{env}-sentrydb` secret in AWS Secrets Manager (us-west-2).
   with deployed firmware. A "cleanup" refactor here breaks production devices.
 - Don't change the 9600 baud rate, USB VID `0x2fe3`, or PID `0x0100` — hardware-fixed.
 - Don't add abstractions in anticipation of future needs. This codebase is
-  deliberately a minimal three-command subset; resist the urge to "professionalize" it.
+  deliberately a minimal subset of the full deploy CLI; resist the urge to
+  "professionalize" it.
 - Don't add `internal/` sub-splits without a real reason. Current layout is the layout.
-- Don't commit `deployment-result.csv` or `location-map.csv` — runtime artifacts.
+- Don't commit `deployment-result.csv`, `fw-update-result.csv`, or `location-map.csv` — runtime artifacts.
+- Don't commit `*.bin` firmware files.
 - Don't run plain `go install`/`go build` (see Commands above).
 
 ## Linux gotcha

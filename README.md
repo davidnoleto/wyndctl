@@ -8,8 +8,13 @@ A Go CLI for deploying Wynd Sentry IoT air-quality devices over USB serial. Hand
 |---|---|
 | `scan` | Discover all Sentry devices connected via USB; optionally label bay positions |
 | `deploy` | Provision WiFi credentials and assign devices to properties and rooms in parallel |
+| `fw-update` | Write firmware images (main / WiFi / PMM) to connected devices over USB |
+| `unprovision` | Clear WiFi and MQTT credentials from one or all devices |
+| `create-account` | Create a user account (Stripe customer, Cognito user, platform DB row) |
 | `create-property` | Create a lodging property for a user account |
 | `list-property` | List lodging properties for a user account |
+| `delete-property` | Delete a lodging property |
+| `list-devices` | List devices assigned to a user account |
 | `delete-device` | Remove device-to-room assignments from the database |
 
 ## Requirements
@@ -91,6 +96,29 @@ Interactively label each device's bay position and write a `location-map.csv`:
 wyndctl scan --label
 ```
 
+### fw-update
+
+Update firmware on all connected devices (any combination of images):
+
+```bash
+wyndctl fw-update --firmware sentry.bin
+wyndctl fw-update --wifi-firmware bw16.bin
+wyndctl fw-update --pmm-firmware pmm.bin
+wyndctl fw-update --firmware sentry.bin --wifi-firmware bw16.bin --pmm-firmware pmm.bin
+```
+
+Force-update all devices regardless of a previous run's results:
+
+```bash
+wyndctl fw-update --firmware sentry.bin --all
+```
+
+Results are logged to `fw-update-result.csv`. Re-runs without `--all` only retry
+devices that failed in the previous run.
+
+The command waits after each reboot for the device to finish flashing
+(~35 s main / ~140 s WiFi / ~100 s PMM) before returning.
+
 ### deploy
 
 Provision all connected devices in parallel using `deployment-data.csv`:
@@ -109,6 +137,33 @@ Deploy one device at a time with operator confirmation between each:
 
 ```bash
 wyndctl deploy --iterative
+```
+
+### unprovision
+
+Clear WiFi and MQTT credentials from all connected devices:
+
+```bash
+wyndctl unprovision
+```
+
+Target a single device by serial port:
+
+```bash
+wyndctl unprovision --port /dev/cu.usbmodem012345671
+```
+
+### create-account
+
+Create a full user account (Stripe customer + Cognito user + platform DB row):
+
+```bash
+wyndctl create-account \
+  --email owner@example.com \
+  --name "Jane Smith" \
+  --password "TempPass123!" \
+  --enterprise-name "Acme Hotels" \
+  --client-type hotel
 ```
 
 ### create-property
@@ -132,6 +187,28 @@ List all properties for a user account:
 
 ```bash
 wyndctl list-property --account owner@example.com
+```
+
+### delete-property
+
+Delete a lodging property:
+
+```bash
+wyndctl delete-property --account owner@example.com --lodging-id 42
+```
+
+### list-devices
+
+List all devices assigned to a user account:
+
+```bash
+wyndctl list-devices --account owner@example.com
+```
+
+Scope to a specific property:
+
+```bash
+wyndctl list-devices --account owner@example.com --lodging-id 42
 ```
 
 ### delete-device
