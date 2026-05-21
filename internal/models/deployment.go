@@ -35,6 +35,15 @@ type DeploymentResult struct {
 	Reason    string `csv:"reason,omitempty"`
 }
 
+// FirmwareUpdateResult represents the outcome of a firmware update on a single device.
+type FirmwareUpdateResult struct {
+	Bay       int
+	DeviceID  string
+	MACAddr   string
+	Succeeded bool
+	Reason    string
+}
+
 // LocationMapping maps bay numbers to USB serial port locations.
 type LocationMapping struct {
 	Bay      int    `csv:"bay"`

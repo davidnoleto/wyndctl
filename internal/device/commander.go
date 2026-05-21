@@ -248,6 +248,55 @@ func (c *Commander) Unprovision(ch *transport.SerialChannel) error {
 	return err
 }
 
+// WriteFirmware writes a firmware image to the device using the streaming Write RPC.
+// targetPath is the device-side symbolic path (e.g. "$firmware_path").
+// The device must be powered off before calling this.
+func (c *Commander) WriteFirmware(ch *transport.SerialChannel, targetPath string, data []byte, chunkTimeout time.Duration) error {
+	ctx := c.rpc.StreamingCall(MethodWrite, ch)
+	defer c.rpc.StreamingFinalize(ctx)
+
+	openInner := newEncoder()
+	openInner.WriteString(fieldPath, targetPath)
+	openEnc := newEncoder()
+	openEnc.WriteMessage(fieldOpen, openInner)
+	if err := c.rpc.StreamingSend(ctx, openEnc.Bytes()); err != nil {
+		return fmt.Errorf("write open send: %w", err)
+	}
+	if _, err := c.rpc.StreamingReceive(ctx, chunkTimeout); err != nil {
+		return fmt.Errorf("write open response: %w", err)
+	}
+
+	const chunkSize = 512
+	for offset := 0; offset < len(data); offset += chunkSize {
+		end := offset + chunkSize
+		if end > len(data) {
+			end = len(data)
+		}
+		dataInner := newEncoder()
+		dataInner.WriteUint32(fieldOffset, uint32(offset))
+		dataInner.WriteBytes(fieldDataBytes, data[offset:end])
+		dataEnc := newEncoder()
+		dataEnc.WriteMessage(fieldData, dataInner)
+		if err := c.rpc.StreamingSend(ctx, dataEnc.Bytes()); err != nil {
+			return fmt.Errorf("write data at offset %d: %w", offset, err)
+		}
+		if _, err := c.rpc.StreamingReceive(ctx, chunkTimeout); err != nil {
+			return fmt.Errorf("write data response at offset %d: %w", offset, err)
+		}
+	}
+
+	closeEnc := newEncoder()
+	closeEnc.WriteEmptyMessage(fieldClose)
+	if err := c.rpc.StreamingSend(ctx, closeEnc.Bytes()); err != nil {
+		return fmt.Errorf("write close send: %w", err)
+	}
+	if _, err := c.rpc.StreamingReceive(ctx, chunkTimeout); err != nil {
+		return fmt.Errorf("write close response: %w", err)
+	}
+
+	return nil
+}
+
 // GetStatus retrieves the current provisioning state from the device.
 func (c *Commander) GetStatus(ch *transport.SerialChannel) (*models.SentryStatus, error) {
 	resp, err := c.rpc.UnaryCall(MethodGetStatus, nil, ch, 0)
