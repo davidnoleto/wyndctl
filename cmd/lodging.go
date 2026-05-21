@@ -19,6 +19,15 @@ var listPropertyCmd = &cobra.Command{
 	RunE:  runListProperty,
 }
 
+var deletePropertyCmd = &cobra.Command{
+	Use:   "delete-property",
+	Short: "Delete one or all lodging properties for a user account",
+	Long: `Removes lodging record(s) and their associated LodgingIntegration rows.
+Zone records cascade at the database level. Pass --lodging-id to scope deletion
+to a single property; omit it to delete all properties owned by the account.`,
+	RunE: runDeleteProperty,
+}
+
 func init() {
 	createPropertyCmd.Flags().String("account", "", "user email address")
 	createPropertyCmd.Flags().String("name", "", "property name")
@@ -39,6 +48,11 @@ func init() {
 	listPropertyCmd.Flags().String("account", "", "user email address")
 	_ = listPropertyCmd.MarkFlagRequired("account")
 	rootCmd.AddCommand(listPropertyCmd)
+
+	deletePropertyCmd.Flags().String("account", "", "user email address")
+	deletePropertyCmd.Flags().Int("lodging-id", 0, "lodging ID to delete (omit to delete all for account)")
+	_ = deletePropertyCmd.MarkFlagRequired("account")
+	rootCmd.AddCommand(deletePropertyCmd)
 }
 
 func runCreateProperty(cmd *cobra.Command, _ []string) error {
@@ -74,6 +88,35 @@ func runCreateProperty(cmd *cobra.Command, _ []string) error {
 	}
 
 	fmt.Fprintf(cmd.OutOrStdout(), "Property %q (lodging_id=%d) created for user %s.\n", lodging.Name, lodging.LodgingID, account)
+	return nil
+}
+
+func runDeleteProperty(cmd *cobra.Command, _ []string) error {
+	account, _ := cmd.Flags().GetString("account")
+	lodgingIDFlag, _ := cmd.Flags().GetInt("lodging-id")
+
+	repo, err := database.NewRepository(appCfg.DB)
+	if err != nil {
+		return fmt.Errorf("connecting to database: %w", err)
+	}
+	defer repo.Close()
+
+	user, err := repo.GetUserByEmail(account)
+	if err != nil {
+		return fmt.Errorf("user %q not found: %w", account, err)
+	}
+
+	var lodgingID *int
+	if lodgingIDFlag > 0 {
+		lodgingID = &lodgingIDFlag
+	}
+
+	deleted, err := repo.DeleteLodging(user.UserID, lodgingID)
+	if err != nil {
+		return fmt.Errorf("deleting property: %w", err)
+	}
+
+	fmt.Fprintf(cmd.OutOrStdout(), "Deleted %d property(s) for %s.\n", len(deleted), account)
 	return nil
 }
 
