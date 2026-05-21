@@ -9,13 +9,28 @@ const (
 
 // User represents a Wynd platform user account.
 type User struct {
-	UserID   int        `gorm:"primaryKey;column:user_id"`
-	Email    string     `gorm:"column:email"`
-	FullName string     `gorm:"column:full_name"`
-	Status   UserStatus `gorm:"column:status"`
+	UserID          int        `gorm:"primaryKey;column:user_id"`
+	Email           string     `gorm:"column:email"`
+	FullName        string     `gorm:"column:full_name"`
+	Status          UserStatus `gorm:"column:status"`
+	IsSuperuser     bool       `gorm:"column:is_superuser"`
+	CognitoUsername *string    `gorm:"column:cognito_username"`
 }
 
 func (User) TableName() string { return "user" }
+
+// UserProfile holds notification preferences for a user.
+type UserProfile struct {
+	UserProfileID   int                    `gorm:"primaryKey;column:user_profile_id"`
+	UserID          int                    `gorm:"column:user_id"`
+	IsEmailEnabled  bool                   `gorm:"column:is_email_enabled"`
+	IsPushEnabled   bool                   `gorm:"column:is_push_enabled"`
+	IsSMSEnabled    bool                   `gorm:"column:is_sms_enabled"`
+	IsPhoneVerified bool                   `gorm:"column:is_phone_verified"`
+	ExtraData       map[string]interface{} `gorm:"column:extra_data;serializer:json"`
+}
+
+func (UserProfile) TableName() string { return "user_profile" }
 
 // Lodging represents a property owned by a user.
 type Lodging struct {
