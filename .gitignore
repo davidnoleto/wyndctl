@@ -5,6 +5,7 @@ bin/
 deployment-data.csv
 deployment-result.csv
 fw-update-result.csv
+fw-update-tui.log
 location-map.csv
 
 # Firmware binaries
