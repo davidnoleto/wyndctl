@@ -9,6 +9,7 @@ A Go CLI for deploying Wynd Sentry IoT air-quality devices over USB serial. Hand
 | `scan` | Discover all Sentry devices connected via USB; optionally label bay positions |
 | `deploy` | Provision WiFi credentials and assign devices to properties and rooms in parallel |
 | `fw-update` | Write firmware images (main / WiFi / PMM) to connected devices over USB |
+| `fw-update-tui` | Same as `fw-update` with a live status table (experimental) |
 | `unprovision` | Clear WiFi and MQTT credentials from one or all devices |
 | `create-account` | Create a user account (Stripe customer, Cognito user, platform DB row) |
 | `create-property` | Create a lodging property for a user account |
@@ -162,7 +163,25 @@ Results are logged to `fw-update-result.csv`. Re-runs without `--all` only retry
 devices that failed in the previous run.
 
 The command waits after each reboot for the device to finish flashing
-(~35 s main / ~140 s WiFi / ~100 s PMM) before returning.
+(~45 s main / ~145 s WiFi / ~105 s PMM), then reopens the serial channel
+and calls `GetDeviceInfo` to verify the device came back up before
+marking the row succeeded.
+
+### fw-update-tui
+
+`fw-update-tui` is an experimental alternative to `fw-update` that renders a
+live per-device status table instead of streaming log lines. Same flags, same
+output files. While the TUI runs, slog output is redirected to
+`fw-update-tui.log` so it doesn't fight the table for the terminal.
+
+```bash
+wyndctl fw-update-tui --firmware sentry.bin
+```
+
+The underlying flow is identical to `fw-update`. The TUI is opt-in by command
+name — scripts and CI should keep calling `fw-update`. See
+[docs/TUI.md](docs/TUI.md) for the rationale and a note on where this pattern
+might extend next.
 
 ### deploy
 

@@ -13,6 +13,7 @@ import (
 	"github.com/hellowynd/wyndctl/internal/device"
 	"github.com/hellowynd/wyndctl/internal/models"
 	"github.com/hellowynd/wyndctl/internal/transport"
+	"github.com/hellowynd/wyndctl/internal/tui"
 	"github.com/spf13/cobra"
 )
 
@@ -184,7 +185,7 @@ func runFWUpdate(cmd *cobra.Command, args []string) error {
 		go func(c *transport.SerialChannel, bayNum int) {
 			defer wg.Done()
 			defer func() { <-sem }()
-			updateDeviceFirmware(commander, c, bayNum, firmwares, outputPath, &resultMu)
+			updateDeviceFirmware(commander, c, bayNum, firmwares, outputPath, &resultMu, nil)
 		}(ch, bay)
 	}
 
@@ -200,12 +201,24 @@ func updateDeviceFirmware(
 	firmwares []fwEntry,
 	outputPath string,
 	mu *sync.Mutex,
+	progress tui.FWProgressFunc,
 ) {
 	log := appLog.With("bay", bay)
+
+	emit := func(ev tui.FWProgressEvent) {
+		if progress == nil {
+			return
+		}
+		ev.Bay = bay
+		progress(ev)
+	}
+
+	emit(tui.FWProgressEvent{Stage: tui.FWStageIdentifying})
 
 	info, err := commander.GetDeviceInfo(ch)
 	if err != nil {
 		log.Error("failed to get device info", "error", err)
+		emit(tui.FWProgressEvent{Stage: tui.FWStageFailed, Reason: err.Error()})
 		writeFWResult(mu, outputPath, &models.FirmwareUpdateResult{Bay: bay, Reason: err.Error()})
 		return
 	}
@@ -218,9 +231,16 @@ func updateDeviceFirmware(
 		"wifi_fw_rev", info.WiFiFWRevision,
 		"pm_fw_rev", info.PMFWRevision,
 	)
+	emit(tui.FWProgressEvent{
+		Stage:    tui.FWStageIdentified,
+		DeviceID: info.AWSThingName,
+		Serial:   info.SerialNumber,
+	})
 
+	emit(tui.FWProgressEvent{Stage: tui.FWStagePoweringOff, DeviceID: info.AWSThingName, Serial: info.SerialNumber})
 	if err := commander.SetPower(ch, false); err != nil {
 		log.Error("failed to power off device", "error", err)
+		emit(tui.FWProgressEvent{Stage: tui.FWStageFailed, DeviceID: info.AWSThingName, Serial: info.SerialNumber, Reason: err.Error()})
 		writeFWResult(mu, outputPath, &models.FirmwareUpdateResult{
 			Bay: bay, DeviceID: info.AWSThingName, MACAddr: info.WiFiMAC, Reason: err.Error(),
 		})
@@ -230,11 +250,14 @@ func updateDeviceFirmware(
 	applyWait := fwWaitBase
 	for _, fw := range firmwares {
 		log.Info("writing firmware", "target", fw.target, "size", len(fw.data))
+		emit(tui.FWProgressEvent{Stage: tui.FWStageWriting, DeviceID: info.AWSThingName, Serial: info.SerialNumber, Target: fw.target})
 		if err := commander.WriteFirmware(ch, fw.target, fw.data, 4*time.Second); err != nil {
 			log.Error("firmware write failed", "target", fw.target, "error", err)
+			reason := fmt.Sprintf("%s: %s", fw.target, err)
+			emit(tui.FWProgressEvent{Stage: tui.FWStageFailed, DeviceID: info.AWSThingName, Serial: info.SerialNumber, Reason: reason})
 			writeFWResult(mu, outputPath, &models.FirmwareUpdateResult{
 				Bay: bay, DeviceID: info.AWSThingName, MACAddr: info.WiFiMAC,
-				Reason: fmt.Sprintf("%s: %s", fw.target, err),
+				Reason: reason,
 			})
 			return
 		}
@@ -249,21 +272,25 @@ func updateDeviceFirmware(
 		}
 	}
 
+	emit(tui.FWProgressEvent{Stage: tui.FWStageRebooting, DeviceID: info.AWSThingName, Serial: info.SerialNumber})
 	if err := commander.Reboot(ch); err != nil {
 		log.Warn("reboot error (likely normal during firmware apply)", "error", err)
 	}
 	_ = commander.CloseChannel(ch)
 
 	log.Info("waiting for device to apply firmware and reboot", "wait", applyWait)
+	emit(tui.FWProgressEvent{Stage: tui.FWStageApplying, DeviceID: info.AWSThingName, Serial: info.SerialNumber, Wait: applyWait})
 	time.Sleep(applyWait)
 
 	// Reopen the serial channel and verify the device came back up. Mirrors
 	// the Python mass_firmware_update script (activate_channel after the sleep,
 	// then RPC calls against the freshly-rebooted device). Without this we have
 	// no signal that the firmware actually applied.
+	emit(tui.FWProgressEvent{Stage: tui.FWStageVerifying, DeviceID: info.AWSThingName, Serial: info.SerialNumber})
 	if err := commander.ActivateChannel(ch); err != nil {
 		reason := fmt.Sprintf("post-reboot activate failed: %s", err)
 		log.Error("post-reboot activate failed", "error", err)
+		emit(tui.FWProgressEvent{Stage: tui.FWStageFailed, DeviceID: info.AWSThingName, Serial: info.SerialNumber, Reason: reason})
 		writeFWResult(mu, outputPath, &models.FirmwareUpdateResult{
 			Bay: bay, DeviceID: info.AWSThingName, MACAddr: info.WiFiMAC, Reason: reason,
 		})
@@ -288,6 +315,7 @@ func updateDeviceFirmware(
 	if verifyErr != nil {
 		reason := fmt.Sprintf("post-reboot verify failed: %s", verifyErr)
 		log.Error("post-reboot verify failed", "error", verifyErr)
+		emit(tui.FWProgressEvent{Stage: tui.FWStageFailed, DeviceID: info.AWSThingName, Serial: info.SerialNumber, Reason: reason})
 		writeFWResult(mu, outputPath, &models.FirmwareUpdateResult{
 			Bay: bay, DeviceID: info.AWSThingName, MACAddr: info.WiFiMAC, Reason: reason,
 		})
@@ -295,6 +323,7 @@ func updateDeviceFirmware(
 	}
 
 	log.Info("firmware update completed")
+	emit(tui.FWProgressEvent{Stage: tui.FWStageCompleted, DeviceID: info.AWSThingName, Serial: info.SerialNumber})
 	writeFWResult(mu, outputPath, &models.FirmwareUpdateResult{
 		Bay: bay, DeviceID: info.AWSThingName, MACAddr: info.WiFiMAC, Succeeded: true,
 	})
