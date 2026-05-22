@@ -22,11 +22,18 @@ const (
 	fwTargetPMM  = "$pm_firmware_path"
 
 	// Time the device needs to apply each image after rebooting.
-	// Derived from the Python mass_deployment script's wait_for_fw_update_in_sec.
-	fwWaitBase = 2 * time.Second
-	fwWaitMain = 35 * time.Second
+	// Matches the Python mass_firmware_update script's wait_for_fw_update_in_sec
+	// (backend/scripts/mass_firmware_update/__main__.py lines 128, 145, 157, 170).
+	fwWaitBase = 5 * time.Second
+	fwWaitMain = 40 * time.Second
 	fwWaitWiFi = 140 * time.Second
 	fwWaitPMM  = 100 * time.Second
+
+	// Post-reboot verification budget: after the apply sleep we reopen the
+	// serial channel and call GetDeviceInfo, retrying within this budget
+	// before declaring the device unrecoverable.
+	fwVerifyBudget   = 15 * time.Second
+	fwVerifyInterval = 2 * time.Second
 )
 
 type fwEntry struct {
@@ -249,6 +256,43 @@ func updateDeviceFirmware(
 
 	log.Info("waiting for device to apply firmware and reboot", "wait", applyWait)
 	time.Sleep(applyWait)
+
+	// Reopen the serial channel and verify the device came back up. Mirrors
+	// the Python mass_firmware_update script (activate_channel after the sleep,
+	// then RPC calls against the freshly-rebooted device). Without this we have
+	// no signal that the firmware actually applied.
+	if err := commander.ActivateChannel(ch); err != nil {
+		reason := fmt.Sprintf("post-reboot activate failed: %s", err)
+		log.Error("post-reboot activate failed", "error", err)
+		writeFWResult(mu, outputPath, &models.FirmwareUpdateResult{
+			Bay: bay, DeviceID: info.AWSThingName, MACAddr: info.WiFiMAC, Reason: reason,
+		})
+		return
+	}
+
+	verifyDeadline := time.Now().Add(fwVerifyBudget)
+	var verifyErr error
+	for {
+		_, verifyErr = commander.GetDeviceInfo(ch)
+		if verifyErr == nil {
+			break
+		}
+		if time.Now().After(verifyDeadline) {
+			break
+		}
+		log.Warn("post-reboot verify pending", "error", verifyErr)
+		time.Sleep(fwVerifyInterval)
+	}
+	_ = commander.CloseChannel(ch)
+
+	if verifyErr != nil {
+		reason := fmt.Sprintf("post-reboot verify failed: %s", verifyErr)
+		log.Error("post-reboot verify failed", "error", verifyErr)
+		writeFWResult(mu, outputPath, &models.FirmwareUpdateResult{
+			Bay: bay, DeviceID: info.AWSThingName, MACAddr: info.WiFiMAC, Reason: reason,
+		})
+		return
+	}
 
 	log.Info("firmware update completed")
 	writeFWResult(mu, outputPath, &models.FirmwareUpdateResult{
