@@ -80,6 +80,51 @@ log:
 
 Place this file in the directory where you run `wyndctl`, or pass `--config /path/to/wyndctl.yaml`.
 
+### Selecting an environment (dev / staging / prod)
+
+`wyndctl` defaults to `dev`. Override per-command with `--env`, per-shell with
+`WYND_ENV`, or persistently in `wyndctl.yaml`:
+
+```bash
+# One-off
+wyndctl list-devices --env prod --account owner@example.com
+
+# Whole shell session
+export WYND_ENV=staging
+wyndctl list-property --account owner@example.com
+```
+
+The chosen environment determines which `wynd-{env}-sentrydb` secret is fetched
+from AWS Secrets Manager.
+
+> **Running against `prod`?** Destructive commands (`delete-device`,
+> `delete-property`, `unprovision`) have no confirmation prompt — that's
+> intentional. See [docs/AWS_SETUP.md](docs/AWS_SETUP.md#safety-running-against-prod)
+> for the safe-usage checklist.
+
+### AWS credentials
+
+The AWS SDK is bundled with `wyndctl` — nothing to install separately. You do
+need credentials that can read Secrets Manager in `us-west-2`. The fastest path
+is the AWS CLI:
+
+```bash
+brew install awscli         # macOS
+# sudo apt install awscli   # Ubuntu / Debian
+
+aws configure
+# AWS Access Key ID:     AKIA...
+# AWS Secret Access Key: ...
+# Default region name:   us-west-2
+# Default output format: json
+
+# Sanity-check
+aws sts get-caller-identity
+```
+
+Full walkthrough — named profiles, required IAM policy, and troubleshooting —
+in [docs/AWS_SETUP.md](docs/AWS_SETUP.md).
+
 ## Usage
 
 ### scan
@@ -260,9 +305,10 @@ First check that the binary was built on the Linux host — a macOS-compiled bin
 
 ### Database connection errors
 
-`wyndctl` automatically resolves credentials from AWS Secrets Manager using the secret name `wynd-{env}-sentrydb`. Ensure your AWS credentials are configured and have `secretsmanager:GetSecretValue` access in `us-west-2`. You can override with `WYND_DB_DSN` or by setting `db` values in `wyndctl.yaml`.
+`wyndctl` automatically resolves credentials from AWS Secrets Manager using the secret name `wynd-{env}-sentrydb`. Ensure your AWS credentials are configured and have `secretsmanager:GetSecretValue` access in `us-west-2`. You can override with `WYND_DB_DSN` or by setting `db` values in `wyndctl.yaml`. See [docs/AWS_SETUP.md](docs/AWS_SETUP.md) for the full setup, including the minimal IAM policy and common error messages.
 
 ## Further reading
 
 - [Architecture](docs/ARCHITECTURE.md) — transport stack, device lifecycle, command flows
+- [AWS setup](docs/AWS_SETUP.md) — environments, AWS credentials, IAM policy, prod safety
 - [Linux setup](docs/LINUX_SETUP.md) — dialout group, udev rules, build-on-target-OS
