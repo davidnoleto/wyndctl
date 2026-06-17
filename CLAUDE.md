@@ -49,18 +49,12 @@ from the `wynd-{env}-sentrydb` secret in AWS Secrets Manager (us-west-2).
 
 ## Security — hard rules
 
-- **Never log the `psk` argument.** `ssid` is fine; `psk` is not. The `SECURITY:`
-  comment in `device.Commander.SetProvision` is load-bearing — don't remove it,
-  don't work around it.
-- **Never log the `--password` argument to `create-account`.** Same rule, same
-  reason. The `SECURITY:` comment in `runCreateAccount` (cmd/account.go) is
-  load-bearing.
+- **Never log the `--password` argument to `create-account`.** The `SECURITY:`
+  comment in `runCreateAccount` (cmd/account.go) is load-bearing.
 - **Never detach IoT certs or policies.** Sentry devices are factory pre-provisioned
   with X.509 certs that are permanent hardware identity. `EnsureThing` only sets
   `assigned=true`; `UnassignThing` only sets `assigned=false`. Anything that touches
   certs or policies breaks the device irrecoverably.
-- **Treat `deployment-data.csv` as a secret.** It contains plaintext WiFi PSKs.
-  Do not commit it.
 - The *absence* of a confirmation prompt on `delete-device` is also intentional.
   Don't add one.
 
